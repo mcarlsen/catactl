@@ -2,3 +2,4 @@
 /downloads/
 /venv/
 /.idea/
+__pycache__

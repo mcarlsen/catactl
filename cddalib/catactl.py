@@ -1,3 +1,4 @@
+import traceback
 import datetime
 import dataclasses
 import multiprocessing
@@ -13,7 +14,7 @@ import json
 import click
 import zipfile
 import pickle
-import itertools
+import subprocess
 import contextlib
 import os
 from urllib.request import urlretrieve
@@ -121,9 +122,6 @@ class Release:
         """
         self.install()
 
-        import subprocess
-        import sys
-
         cwd = str(self.install_target)
         exe = "cataclysm-tiles"
         print(f"running {exe} from {cwd}")
@@ -148,14 +146,17 @@ def chdir(path: Path = None):
 
 
 def process_chunk(files: List[str]):
-    print('PROCESS', files)
+    in_bytes = 0
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode='w:gz') as tar:
         for path in files:
             tarinfo = tar.gettarinfo(path)
+            in_bytes += tarinfo.size
             with open(path, 'rb') as f:
                 tar.addfile(tarinfo, f)
-    return buffer
+    out_bytes = buffer.tell()
+    buffer.seek(0)
+    return buffer, in_bytes, out_bytes
 
 
 class Backup:
@@ -171,59 +172,94 @@ class Backup:
         with chdir(build.install_target):
             files = [str(file) for file in Path("save").glob('**/*') if file.is_file()]
 
-            random.shuffle(files)
-            cpu_count = multiprocessing.cpu_count()
+            # random.shuffle(files)
+            cpu_count = multiprocessing.cpu_count() * 2
             chunk_size = 1 + int(len(files) / cpu_count)
             chunks = chunked(files, chunk_size)
 
             t1 = time.monotonic()
 
-            with multiprocessing.Pool(cpu_count) as pool:
-                buffers = pool.map(process_chunk, chunks)
-
-            t2 = time.monotonic()
-
-            # for i, buffer in enumerate(buffers):
-            #     buffer.seek(0)
-            #     with tarfile.open(fileobj=buffer, mode='r|*') as buftar:
-            #         print(f'part-{i}:')
-            #         buftar.list()
+            part = 1
+            errors = []
+            in_bytes_sum = 0
+            out_bytes_sum = 0
 
             with tarfile.open(backup_target, mode='w') as tar:
-                for i, buffer in enumerate(buffers):
-                    size = buffer.tell()
-                    buffer.seek(0)
-                    tarinfo = tarfile.TarInfo(name=f"part-{i}.tgz")
-                    tarinfo.size = size
+                def on_result(r):
+                    buffer, in_bytes, out_bytes = r
+                    nonlocal tar, part, out_bytes_sum, in_bytes_sum
+
+                    # output
+                    tarinfo = tarfile.TarInfo(name=f"part-{part}.tgz")
+                    tarinfo.size = out_bytes
                     tarinfo.mtime = time.time()
                     tar.addfile(tarinfo, buffer)
 
-        print(f"backup took {t2-t0} seconds")
+                    # bean-counting
+                    part += 1
+                    in_bytes_sum += in_bytes
+                    out_bytes_sum += out_bytes
+
+                def on_error(e):
+                    nonlocal errors
+                    traceback.print_exception(type(e), e, e.__traceback__)
+                    errors.append(e)
+
+                with multiprocessing.Pool(cpu_count) as pool:
+                    for chunk in chunks:
+                        pool.apply_async(process_chunk, (chunk,), callback=on_result, error_callback=on_error)
+                    pool.close()
+                    pool.join()
+
+                if errors:
+                    print(f'ERROR: backup failed {len(errors)} errors: {errors}')
+                    backup_target.unlink(missing_ok=True)
+                    sys.exit(1)
+
+                compression_rate = 1.0 - out_bytes_sum / in_bytes_sum
+                print(
+                    f'INFO: compressed {in_bytes_sum} bytes '
+                    f'in {len(files)} files '
+                    f'to {out_bytes_sum} bytes '
+                    f'at {compression_rate*100:.1f}% compression rate')
+
+            t2 = time.monotonic()
+
+        print(f"backup took {t2-t0:.2f} seconds")
 
     @staticmethod
     def restore(build: Release, backup: str):
         with chdir(backup_folder):
+            save_dir = Path('save')
+            tmp_dir = Path('save.tmp')
             with tarfile.open(f"{backup}.tgz", mode='r|*') as tar:
                 with chdir(build.install_target):
-                    if Path('save.tmp').exists():
+                    if tmp_dir.exists():
                         print("ERROR: Refusing to touch the mess that the previous restore left. Yikes!")
+                        print(f"ERROR: You can try to manually salvage the situation by renaming the '{tmp_dir}' folder to 'save'")
                         sys.exit(1)
 
-                    Path('save').rename('save.tmp')
+                    # stash existing save
+                    if save_dir.exists():
+                        save_dir.rename(tmp_dir)
+
                     try:
                         for part in tar:
                             reader = tar.extractfile(part)
                             with tarfile.open(fileobj=reader) as parttar:
                                 parttar.extractall('.')
 
-                        shutil.rmtree('save.tmp')
+                        # restore seems ok. we can remove the stashed save
+                        if tmp_dir.exists():
+                            shutil.rmtree(tmp_dir)
+
                     except Exception as e:
                         print(f'ERROR: {e}')
-                        if Path('save.tmp').exists():
-                            if Path('save').exists():
-                                shutil.rmtree('save')
-                            Path('save.tmp').rename('save')
-                            print('INFO: salvaged existing save')
+                        # try to restore the stashed save
+                        if tmp_dir.exists():
+                            if save_dir.exists():
+                                shutil.rmtree(save_dir)
+                            tmp_dir.rename(save_dir)
                         sys.exit(1)
 
     @staticmethod
@@ -350,7 +386,7 @@ def install(tag, cached, force):
 
 @catactl.command()
 @click.option('--backup', is_flag=True, help='Backup the save before running')
-def run():
+def run(backup):
     """
     Run the most recently installed build.
 
@@ -393,6 +429,15 @@ def restore(backup):
     """
     build = Release.load(current_install_data_file)
     Backup.restore(build, backup)
+
+
+@show.command()
+def directory():
+    """
+    Open a window with the current install directory.
+    """
+    build = Release.load(current_install_data_file)
+    subprocess.Popen(['start', str(build.install_target)], shell=True)
 
 
 if __name__ == '__main__':
