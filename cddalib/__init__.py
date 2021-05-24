@@ -1,3 +1,4 @@
+import random
 import traceback
 import datetime
 import dataclasses
@@ -156,18 +157,26 @@ class Backup:
         if label is None:
             label = build.tag_name
         timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
-        file_name = f'{timestamp}-{label}.tgz'
+        file_name = f'{timestamp}-{label}.{backup_suffix}'
         backup_target = backup_folder / file_name
         print(f"backing up {build.install_target / 'save'} to {backup_target}")
 
         t0 = time.monotonic()
 
+        # Use multiprocessing to split up the compression to improve backup speed
+        # on systems where storage read speed outstrips the compression speed of a single CPU core.
+        # May keep all of the compressed output streams in memory,
+        # so please don't have your saves approach 8-10x your available RAM in size :)
+
         with chdir(build.install_target):
             files = [str(file) for file in Path("save").glob('**/*') if file.is_file()]
 
-            # random.shuffle(files)
+            # Try to send a similar amount of data to each process.
+            # We could do a real algorithm but random shuffle should be good enough.
             cpu_count = multiprocessing.cpu_count() * 2
             chunk_size = 1 + int(len(files) / cpu_count)
+            random.seed(2)  # fixed seed for deterministic output
+            random.shuffle(files)
             chunks = chunked(files, chunk_size)
 
             t1 = time.monotonic()
@@ -225,7 +234,7 @@ class Backup:
         with chdir(backup_folder):
             save_dir = Path('save')
             tmp_dir = Path('save.tmp')
-            with tarfile.open(f"{backup}.tgz", mode='r|*') as tar:
+            with tarfile.open(f"{backup}.{backup_suffix}", mode='r|*') as tar:
                 with chdir(build.install_target):
                     if tmp_dir.exists():
                         print("ERROR: Refusing to touch the mess that the previous restore left. Yikes!")
@@ -261,7 +270,7 @@ class Backup:
         Get list of backups, in chronologically ascending order
         """
         with chdir(backup_folder):
-            return [backup.stem for backup in sorted(Path(".").glob('*.tgz'))]
+            return [backup.stem for backup in sorted(Path(".").glob(f'*.{backup_suffix}'))]
 
     @staticmethod
     def show_list():
