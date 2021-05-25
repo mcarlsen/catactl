@@ -1,13 +1,14 @@
 import click
 import sys
 import subprocess
-from . import init, ReleaseList, Release, switch_install, Backup
-from .config import current_install_data_file
+from pathlib import Path
+from . import init_env, env, ReleaseList, Release, switch_install, Backup
 
 
 @click.group()
 def catactl():
-    init()
+    app_root = Path.home() / 'AppData' / 'Local' / 'Cataclysm'
+    init_env(app_root)
 
 
 @catactl.group()
@@ -75,7 +76,7 @@ def run(backup, label):
 
     Use `catactl install TAG` to switch to another build
     """
-    build = Release.load(current_install_data_file)
+    build = Release.load(env.current_install_data_file)
 
     if backup:
         Backup.backup(build, label=label)
@@ -89,16 +90,17 @@ def backup(label):
     """
     Backs up the save of the most recently installed build.
     """
-    build = Release.load(current_install_data_file)
+    build = Release.load(env.current_install_data_file)
     Backup.backup(build, label=label)
 
 
 @show.command()
 def backups():
     """
-    Shows the list of backups.
+    Shows backups - latest will be last.
     """
-    Backup.show_list()
+    for backup in Backup.get_list():
+        print(backup)
 
 
 @catactl.command()
@@ -119,7 +121,7 @@ def restore(backup):
     if backup == 'latest':
         backup = Backup.get_list()[-1]
 
-    build = Release.load(current_install_data_file)
+    build = Release.load(env.current_install_data_file)
     Backup.restore(build, backup)
 
 
@@ -128,7 +130,7 @@ def directory():
     """
     Opens a window with the current install directory.
     """
-    build = Release.load(current_install_data_file)
+    build = Release.load(env.current_install_data_file)
     subprocess.Popen(['start', str(build.install_target)], shell=True)
 
 

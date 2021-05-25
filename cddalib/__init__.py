@@ -19,8 +19,18 @@ import os
 from urllib.request import urlretrieve
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
-from .config import *
+from typing import List, Optional
+from .config import Env
+
+env: Optional[Env] = None
+
+
+def init_env(app_root: Path):
+    """Initialize the configuration"""
+    global env
+    env = Env(app_root)
+    env.create_folders()
+    return env
 
 
 def chunked(lst, n):
@@ -56,12 +66,12 @@ class Release:
     @property
     def download_target(self):
         """Path to the downloaded release archive"""
-        return download_folder / self.file_name
+        return env.download_folder / self.file_name
 
     @property
     def install_target(self):
         """Path to the install folder"""
-        return install_folder / self.tag_name
+        return env.install_folder / self.tag_name
 
     @property
     def manifest_target(self):
@@ -101,7 +111,7 @@ class Release:
         if Path(self.file_name).suffix == ".zip":
             self.install_target.mkdir(exist_ok=True, parents=True)
             print(f"installing {self.file_name} to {self.install_target}")
-            with zipfile.ZipFile(download_folder / self.file_name, 'r') as f:
+            with zipfile.ZipFile(env.download_folder / self.file_name, 'r') as f:
                 self.install_target.mkdir(exist_ok=True)
                 f.extractall(self.install_target)
             self.dump(self.manifest_target)
@@ -128,6 +138,7 @@ class Release:
 
 @contextlib.contextmanager
 def chdir(path: Path = None):
+    """Context manager that chdirs to path on entry and chdirs back to the previous working directory on exit"""
     cwd = os.getcwd()
     try:
         if path is not None:
@@ -152,21 +163,38 @@ def process_chunk(files: List[str]):
 
 
 class Backup:
+    """
+    Backup and restore.
+
+    Uses multiprocessing to improve backup speed, especially
+    on systems where storage read speed outstrips the compression speed of a single CPU core.
+    The resulting archive is a plain TAR formatted file containing a number of .tgz files,
+    each .tgz containing parts of the save.
+
+    May keep all of the .tgz files in memory while compressing,
+    so please don't let your saves approach 8-10x your available RAM in size :)
+
+    Restores are single-threaded to prevent hypothetical race conditions involving directory creation,
+    so they may be slower than backups.
+    """
     @staticmethod
-    def backup(build: Release, label: str = None):
+    def backup(build: Release, label: str = None) -> str:
+        """
+        Backs up the save of the given build.
+
+        :param build: which installed build to back up from.
+        :param label: a label for the backup. Default is to label it with the build tag.
+        :return: the backup id (timestamp + label)
+        """
         if label is None:
             label = build.tag_name
         timestamp = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
-        file_name = f'{timestamp}-{label}.{backup_suffix}'
-        backup_target = backup_folder / file_name
-        print(f"backing up {build.install_target / 'save'} to {backup_target}")
+        backup_id = f'{timestamp}-{label}'
+        file_name = f'{backup_id}.{env.backup_suffix}'
+        backup_target = env.backup_folder / file_name
+        print(f"backing up {build.tag_name} to {timestamp}-{label}")
 
         t0 = time.monotonic()
-
-        # Use multiprocessing to split up the compression to improve backup speed
-        # on systems where storage read speed outstrips the compression speed of a single CPU core.
-        # May keep all of the compressed output streams in memory,
-        # so please don't have your saves approach 8-10x your available RAM in size :)
 
         with chdir(build.install_target):
             files = [str(file) for file in Path("save").glob('**/*') if file.is_file()]
@@ -179,19 +207,20 @@ class Backup:
             random.shuffle(files)
             chunks = chunked(files, chunk_size)
 
-            t1 = time.monotonic()
-
             part = 1
             errors = []
             in_bytes_sum = 0
             out_bytes_sum = 0
 
+            # open a plain tar file for writing each compressed chunk
             with tarfile.open(backup_target, mode='w') as tar:
+
                 def on_result(r):
+                    """Writes a chunk of .tgz compressed files to the output tar"""
                     buffer, in_bytes, out_bytes = r
                     nonlocal tar, part, out_bytes_sum, in_bytes_sum
 
-                    # output
+                    # output the compressed chunk
                     tarinfo = tarfile.TarInfo(name=f"part-{part}.tgz")
                     tarinfo.size = out_bytes
                     tarinfo.mtime = time.time()
@@ -203,38 +232,42 @@ class Backup:
                     out_bytes_sum += out_bytes
 
                 def on_error(e):
+                    """Records the failure to compress a chunk"""
                     nonlocal errors
                     traceback.print_exception(type(e), e, e.__traceback__)
                     errors.append(e)
 
+                # Compress one chunk of files per cpu
                 with multiprocessing.Pool(cpu_count) as pool:
                     for chunk in chunks:
                         pool.apply_async(process_chunk, (chunk,), callback=on_result, error_callback=on_error)
                     pool.close()
                     pool.join()
 
-                if errors:
-                    print(f'ERROR: backup failed {len(errors)} errors: {errors}')
-                    backup_target.unlink(missing_ok=True)
-                    sys.exit(1)
+            if errors:
+                print(f'ERROR: backup failed {len(errors)} errors: {errors}')
+                backup_target.unlink(missing_ok=True)
+                sys.exit(1)
 
-                compression_rate = 1.0 - out_bytes_sum / in_bytes_sum
-                print(
-                    f'INFO: compressed {in_bytes_sum} bytes '
-                    f'in {len(files)} files '
-                    f'to {out_bytes_sum} bytes '
-                    f'at {compression_rate*100:.1f}% compression rate')
+            compression_rate = 1.0 - out_bytes_sum / in_bytes_sum
+            print(
+                f'INFO: compressed {in_bytes_sum} bytes '
+                f'in {len(files)} files '
+                f'to {out_bytes_sum} bytes '
+                f'at {compression_rate*100:.1f}% compression rate')
 
-            t2 = time.monotonic()
-
-        print(f"backup took {t2-t0:.2f} seconds")
+            t1 = time.monotonic()
+            t = t1 - t0
+            mib_per_second = in_bytes_sum / (1024*1024) / t
+            files_per_second = int(len(files) / t)
+            print(f"INFO: backup took {t:.2f} seconds at {mib_per_second} MiB/s ({files_per_second} files/s)")
 
     @staticmethod
     def restore(build: Release, backup: str):
-        with chdir(backup_folder):
+        with chdir(env.backup_folder):
             save_dir = Path('save')
             tmp_dir = Path('save.tmp')
-            with tarfile.open(f"{backup}.{backup_suffix}", mode='r|*') as tar:
+            with tarfile.open(f"{backup}.{env.backup_suffix}", mode='r|*') as tar:
                 with chdir(build.install_target):
                     if tmp_dir.exists():
                         print("ERROR: Refusing to touch the mess that the previous restore left. Yikes!")
@@ -269,16 +302,8 @@ class Backup:
         """
         Get list of backups, in chronologically ascending order
         """
-        with chdir(backup_folder):
-            return [backup.stem for backup in sorted(Path(".").glob(f'*.{backup_suffix}'))]
-
-    @staticmethod
-    def show_list():
-        """
-        Print backups, in chronologically ascending order
-        """
-        for backup in Backup.get_list():
-            print(backup)
+        with chdir(env.backup_folder):
+            return [backup.stem for backup in sorted(Path(".").glob(f'*.{env.backup_suffix}'))]
 
 
 class DataclassEncoder(json.JSONEncoder):
@@ -294,17 +319,11 @@ class DataclassEncoder(json.JSONEncoder):
 json_opts = {"indent": 4, "cls": DataclassEncoder}
 
 
-def init():
-    download_folder.mkdir(exist_ok=True, parents=True)
-    install_folder.mkdir(exist_ok=True, parents=True)
-    backup_folder.mkdir(exist_ok=True, parents=True)
-
-
 class ReleaseList:
     @staticmethod
     def download() -> List[Release]:
         print('downloading release list')
-        url = f'{repo_url}/releases'
+        url = f'{env.repo_url}/releases'
         releases = requests.get(url).json()
         releases = [Release.parse(r) for r in releases]
         releases = [r for r in releases if r]
@@ -317,19 +336,19 @@ class ReleaseList:
 
     @staticmethod
     def dump(releases: List[Release]):
-        with open(builds_data_file, 'wb') as f:
+        with open(env.builds_data_file, 'wb') as f:
             pickle.dump(releases, f)
 
     @staticmethod
     def load() -> List[Release]:
-        with open(builds_data_file, 'rb') as f:
+        with open(env.builds_data_file, 'rb') as f:
             return pickle.load(f)
 
     @staticmethod
     def exists() -> bool:
-        return builds_data_file.exists()
+        return env.builds_data_file.exists()
 
 
 def switch_install(release: Release):
     print(f"switching to {release.tag_name}")
-    release.dump(current_install_data_file)
+    release.dump(env.current_install_data_file)
