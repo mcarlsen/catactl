@@ -1,8 +1,8 @@
 import pytest
 import tarfile
 import shutil
-from cddalib import Backup, process_chunk, Release, switch_install
-from cddalib.config import Env
+from catactl import Backup, process_chunk, Release, switch_install
+from catactl.config import Env
 from pathlib import Path
 
 num_subdirs_in_save = 7

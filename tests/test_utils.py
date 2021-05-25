@@ -1,7 +1,7 @@
 import pytest
 import os
 from pathlib import Path
-from cddalib import chunked, chdir
+from catactl import chunked, chdir
 
 a = list(range(100))
 

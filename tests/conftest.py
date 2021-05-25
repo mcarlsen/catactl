@@ -1,6 +1,6 @@
 import pytest
 from pathlib import Path
-from cddalib.config import Env, init_app, current_env
+from catactl.config import Env, init_app, current_env
 
 
 @pytest.fixture

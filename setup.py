@@ -13,7 +13,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            "catactl=cddalib.catactl:catactl",
+            "catactl=catactl.catactl:catactl",
         ],
     },
 )
