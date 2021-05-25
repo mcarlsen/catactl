@@ -86,7 +86,7 @@ class Release:
             pickle.dump(self, pkl)
 
     @staticmethod
-    def load(target: Path):
+    def load(target: Path) -> 'Release':
         with open(target, 'rb') as pkl:
             return pickle.load(pkl)
 
@@ -262,6 +262,8 @@ class Backup:
             files_per_second = int(len(files) / t)
             print(f"INFO: backup took {t:.2f} seconds at {mib_per_second} MiB/s ({files_per_second} files/s)")
 
+        return backup_id
+
     @staticmethod
     def restore(build: Release, backup: str):
         with chdir(env.backup_folder):
@@ -270,8 +272,11 @@ class Backup:
             with tarfile.open(f"{backup}.{env.backup_suffix}", mode='r|*') as tar:
                 with chdir(build.install_target):
                     if tmp_dir.exists():
-                        print("ERROR: Refusing to touch the mess that the previous restore left. Yikes!")
-                        print(f"ERROR: You can try to manually salvage the situation by renaming the '{tmp_dir}' folder to 'save'")
+                        print("ERROR: Refusing to touch the mess that the previous restore left. "
+                              "Maybe there was a power outage or you interrupted the process or something?")
+                        print("INFO: You can try to manually salvage the situation by "
+                              f"moving the 'save' folder out of the way and renaming the '{tmp_dir}' folder to 'save'.")
+                        print("`catactl show directory` should open the location for you.")
                         sys.exit(1)
 
                     # stash existing save
@@ -295,6 +300,7 @@ class Backup:
                             if save_dir.exists():
                                 shutil.rmtree(save_dir)
                             tmp_dir.rename(save_dir)
+                            print(f'INFO: the existing save should still exist')
                         sys.exit(1)
 
     @staticmethod
