@@ -1,9 +1,9 @@
 import pytest
 import tarfile
 import shutil
-from cddalib import Backup, process_chunk, Env, chdir, Release, ReleaseList, switch_install
+from cddalib import Backup, process_chunk, Release, switch_install
+from cddalib.config import Env
 from pathlib import Path
-from typing import Tuple, List
 
 num_subdirs_in_save = 7
 num_files_per_subdir = 11

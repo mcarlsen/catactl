@@ -1,10 +1,10 @@
 import pytest
 from pathlib import Path
-from cddalib import Env, init_env
+from cddalib.config import Env, init_app, current_env
 
 
 @pytest.fixture
 def env(tmpdir) -> Env:
     """the 'env' fixture provides an environment rooted in a temporary folder"""
-    root = Path(tmpdir)
-    return init_env(root)
+    init_app(app_root=Path(tmpdir))
+    return current_env

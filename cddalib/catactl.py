@@ -2,13 +2,14 @@ import click
 import sys
 import subprocess
 from pathlib import Path
-from . import init_env, env, ReleaseList, Release, switch_install, Backup
+from . import ReleaseList, Release, switch_install, Backup
+from .config import init_app, current_env as env
 
 
 @click.group()
 def catactl():
     app_root = Path.home() / 'AppData' / 'Local' / 'Cataclysm'
-    init_env(app_root)
+    init_app(app_root)
 
 
 @catactl.group()

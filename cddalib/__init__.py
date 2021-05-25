@@ -19,18 +19,8 @@ import os
 from urllib.request import urlretrieve
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
-from .config import Env
-
-env: Optional[Env] = None
-
-
-def init_env(app_root: Path):
-    """Initialize the configuration"""
-    global env
-    env = Env(app_root)
-    env.create_folders()
-    return env
+from typing import List
+from .config import current_env as env
 
 
 def chunked(lst, n):
