@@ -89,7 +89,7 @@ class Release:
         urlretrieve(self.download_url, self.download_target)
 
     def install(self, force=False):
-        """Install the release. Will attempt to download the build if necessary"""
+        """Install the release. Must be downloaded first"""
         if self.install_target.exists() and not force:
             print(f"already installed {self.tag_name}")
             return
@@ -110,9 +110,11 @@ class Release:
 
     def run(self):
         """
-        Launch the release. Will download and install if necessary.
+        Launch the release. Must be downloaded and installed first.
         """
-        self.install()
+        if not self.install_target.exists():
+            print(f"ERROR: Not installed: {self.tag_name}")
+            sys.exit(1)
 
         cwd = str(self.install_target)
         exe = "cataclysm-tiles"

@@ -59,12 +59,14 @@ def install(tag, cached, force):
         sys.exit(1)
 
     build = builds[0]
-    if cached and not build.download_target.exists():
-        print(f"ERROR: Build not cached. Cannot install.")
-        sys.exit(1)
-    else:
-        build.install(force=force)
+    if not build.download_target.exists():
+        if cached:
+            print(f"ERROR: Cannot install {tag} without downloading it first.")
+            sys.exit(1)
+        else:
+            build.download(force=force)
 
+    build.install(force=force)
     switch_install(build)
 
 
@@ -129,10 +131,9 @@ def restore(backup):
 @show.command()
 def directory():
     """
-    Opens a window with the current install directory.
+    Opens the catactl application folder in a window
     """
-    build = Release.load(env.current_install_data_file)
-    subprocess.Popen(['start', str(build.install_target)], shell=True)
+    subprocess.Popen(['start', str(env.app_root)], shell=True)
 
 
 if __name__ == '__main__':
