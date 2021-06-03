@@ -16,10 +16,11 @@ import pickle
 import subprocess
 import contextlib
 import os
+import psutil
 from urllib.request import urlretrieve
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from .config import current_env as env
 
 
@@ -27,6 +28,21 @@ def chunked(lst, n):
     """Generator that yields n-sized chunks of the specified list"""
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
+
+
+def get_running_process() -> Optional[psutil.Process]:
+    """
+    Check if an instance of Cataclysm: Dark Days Ahead is already running.
+    Will not detect instances that are not managed by catactl.
+
+    :return: an object representing the running game; None if no game is running.
+    """
+    # for pid in psutil.pids():
+    #     proc = psutil.Process(pid)
+    for proc in psutil.process_iter():
+        if 'cataclysm' in proc.name():
+            if env.app_root in Path(proc.exe()).parents:
+                return proc
 
 
 @dataclass
@@ -184,7 +200,7 @@ class Backup:
         backup_id = f'{timestamp}-{label}'
         file_name = f'{backup_id}.{env.backup_suffix}'
         backup_target = env.backup_folder / file_name
-        print(f"backing up {build.tag_name} to {timestamp}-{label}")
+        print(f"INFO: backing up {build.tag_name} to {timestamp}-{label}", end='', flush=True)
 
         t0 = time.monotonic()
 
@@ -222,12 +238,14 @@ class Backup:
                     part += 1
                     in_bytes_sum += in_bytes
                     out_bytes_sum += out_bytes
+                    print('.', end='', flush=True)
 
                 def on_error(e):
                     """Records the failure to compress a chunk"""
                     nonlocal errors
                     traceback.print_exception(type(e), e, e.__traceback__)
                     errors.append(e)
+                    print('X', end='', flush=True)
 
                 # Compress one chunk of files per cpu
                 with multiprocessing.Pool(cpu_count) as pool:
@@ -235,6 +253,7 @@ class Backup:
                         pool.apply_async(process_chunk, (chunk,), callback=on_result, error_callback=on_error)
                     pool.close()
                     pool.join()
+                    print()
 
             if errors:
                 print(f'ERROR: backup failed {len(errors)} errors: {errors}')
@@ -243,16 +262,16 @@ class Backup:
 
             compression_rate = 1.0 - out_bytes_sum / in_bytes_sum
             print(
-                f'INFO: compressed {in_bytes_sum} bytes '
+                f'INFO: compressed {in_bytes_sum / (1024*1024) :.1f} MiB '
                 f'in {len(files)} files '
-                f'to {out_bytes_sum} bytes '
-                f'at {compression_rate*100:.1f}% compression rate')
+                f'to {out_bytes_sum / (1024*1024) :.1f} MiB '
+                f'at {compression_rate*100 :.1f}% compression rate')
 
             t1 = time.monotonic()
             t = t1 - t0
             mib_per_second = in_bytes_sum / (1024*1024) / t
-            files_per_second = int(len(files) / t)
-            print(f"INFO: backup took {t:.2f} seconds at {mib_per_second} MiB/s ({files_per_second} files/s)")
+            files_per_second = len(files) / t
+            print(f"INFO: backup took {t:.2f} seconds at {mib_per_second :.2f} MiB/s ({files_per_second :.0f} files/s)")
 
         return backup_id
 

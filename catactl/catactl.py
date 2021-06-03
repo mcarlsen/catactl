@@ -1,8 +1,9 @@
 import click
+import psutil
 import sys
 import subprocess
 from pathlib import Path
-from . import ReleaseList, Release, switch_install, Backup
+from . import ReleaseList, Release, switch_install, Backup, get_running_process
 from .config import init_app, current_env as env
 
 
@@ -15,9 +16,43 @@ def catactl():
 @catactl.group()
 def show():
     """
-    Show the current state of affairs
+    Shows the current state of affairs.
     """
     pass
+
+
+@catactl.command()
+def kill():
+    """Terminates a running game process."""
+    p = get_running_process()
+    if p:
+        print(f"INFO: Smashing {p}")
+        p.kill()
+        try:
+            p.wait(timeout=5)
+            print("INFO: Corpse pulped")
+        except psutil.TimeoutExpired as e:
+            print("ERROR: {e}")
+            sys.exit(1)
+    else:
+        print("INFO: No game is running")
+
+
+@show.command()
+@click.option('--verbose', '-v', is_flag=True, help='Dump some process info')
+def process(verbose):
+    """Show process info for the currently running game"""
+    p = get_running_process()
+    if p:
+        print(f"INFO: a game is running ({p.exe()})")
+        if verbose:
+            print(f"DEBUG: {p}")
+            print(f"DEBUG: {p.cpu_times()}")
+            print(f"DEBUG: {p.memory_info()}")
+            print(f"DEBUG: {p.io_counters()}")
+    else:
+        print("INFO: no game is running")
+        sys.exit(1)
 
 
 @show.command()
@@ -30,7 +65,7 @@ def builds(cached):
         ReleaseList.update()
 
     for build in reversed(ReleaseList.load()):
-        print(f"{build.tag_name} (timestamp = {build.timestamp})")
+        print(f"{build.tag_name}")
 
 
 @catactl.command()
@@ -47,6 +82,10 @@ def install(tag, cached, force):
 
     Try `catactl builds` to show the list of release tags.
     """
+    if get_running_process():
+        print("ERROR: quit the game before installing a new version")
+        sys.exit(1)
+
     if not cached:
         ReleaseList.update()
     builds = ReleaseList.load()
@@ -79,6 +118,10 @@ def run(backup, label):
 
     Use `catactl install TAG` to switch to another build
     """
+    if get_running_process():
+        print("ERROR: Already playing the game. Maybe try `catactl kill` to force quit the game.")
+        sys.exit(1)
+
     build = Release.load(env.current_install_data_file)
 
     if backup:
@@ -102,34 +145,38 @@ def backups():
     """
     Shows backups - latest will be last.
     """
-    for backup in Backup.get_list():
-        print(backup)
+    for backup_id in Backup.get_list():
+        print(backup_id)
 
 
 @catactl.command()
-@click.argument('backup')
-def restore(backup):
+@click.argument('backup_id')
+def restore(backup_id):
     """
-    Restores the BACKUP into the most recently installed build.
+    Restores a backup into the most recently installed build.
 
-    Use 'latest' as the BACKUP name to restore the most recent backup.
+    Use 'latest' as the BACKUP_ID to restore the most recent backup.
 
     Try `catactl show backups` to see the list of backups.
     """
-    backups = Backup.get_list()
-    if not backups:
-        print("No backups found")
+    if get_running_process():
+        print("ERROR: Quit the game before restoring a backup. Maybe try `catactl kill` to force quit the game.")
         sys.exit(1)
 
-    if backup == 'latest':
-        backup = Backup.get_list()[-1]
+    backups = Backup.get_list()
+    if not backups:
+        print("ERROR: No backups found")
+        sys.exit(1)
+
+    if backup_id == 'latest':
+        backup_id = Backup.get_list()[-1]
 
     build = Release.load(env.current_install_data_file)
-    Backup.restore(build, backup)
+    Backup.restore(build, backup_id)
 
 
-@show.command()
-def directory():
+@catactl.command()
+def explore():
     """
     Opens the catactl application folder in a window
     """

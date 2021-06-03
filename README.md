@@ -36,6 +36,13 @@ catactl run
 catactl backup
 ```
 
+> Example output
+> ```
+> INFO: backing up cdda-experimental-2021-05-15-1507 to 2021-05-28-201148-cdda-experimental-2021-05-15-1507............
+> INFO: compressed 118.9 MiB in 10108 files to 12.9 MiB at 89.1% compression rate
+> INFO: backup took 3.95 seconds at 30.07 MiB/s (2557 files/s)
+> ```
+
 ### Restore backups
 
 > ⚠️
@@ -56,12 +63,12 @@ List your backups (they are timestamped and by default they are labelled with th
 catactl show backups
 ```
 
-```
-# example output:
-2021-05-24-173950-cdda-experimental-2021-05-15-1507
-2021-05-24-182747-cdda-experimental-2021-05-15-1507
-2021-05-24-205205-cdda-experimental-2021-05-15-1507
-```
+> Example output:
+> ```
+> 2021-05-24-173950-cdda-experimental-2021-05-15-1507
+> 2021-05-24-182747-cdda-experimental-2021-05-15-1507
+> 2021-05-24-205205-cdda-experimental-2021-05-15-1507
+> ```
 
 Then select one of them to restore
 
@@ -97,15 +104,16 @@ First, get the latest versions available:
 catactl show builds
 ```
 
-```
-# Example output:
-cdda-experimental-2021-05-23-0527 (timestamp = 2021-05-23T05:27:55Z)
-cdda-experimental-2021-05-23-0732 (timestamp = 2021-05-23T07:33:15Z)
-cdda-experimental-2021-05-23-0814 (timestamp = 2021-05-23T08:14:37Z)
-cdda-experimental-2021-05-24-0603 (timestamp = 2021-05-24T06:03:27Z)
-cdda-experimental-2021-05-25-1559 (timestamp = 2021-05-25T16:00:07Z)
-cdda-experimental-2021-05-26-0607 (timestamp = 2021-05-26T06:07:30Z)
-```
+
+> Example output:
+> ```
+> cdda-experimental-2021-05-23-0732
+> cdda-experimental-2021-05-23-0814
+> cdda-experimental-2021-05-23-0527
+> cdda-experimental-2021-05-24-0603
+> cdda-experimental-2021-05-25-1559
+> cdda-experimental-2021-05-26-0607
+> ```
 
 Then select and play one of them:
 
