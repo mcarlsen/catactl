@@ -57,12 +57,13 @@ def process(verbose):
 
 @show.command()
 @click.option('--cached', is_flag=True, help='Use the cached list. Do not download.')
-def builds(cached):
+@click.option('--stable', is_flag=True, help='Show only the latest stable release')
+def builds(cached, stable):
     """
     Downloads and shows most recent build tags (most recent last)
     """
     if not cached:
-        ReleaseList.update()
+        ReleaseList.update(only_latest_stable=stable)
 
     for build in reversed(ReleaseList.load()):
         print(f"{build.tag_name}")
@@ -80,14 +81,16 @@ def install(tag, cached, force):
 
     Use 'latest' as the TAG to install the most recent experimental build.
 
-    Try `catactl builds` to show the list of release tags.
+    Use 'stable' as the TAG to install the most recent stable release build.
+
+    Try `catactl show builds` to show the list of release tags.
     """
     if get_running_process():
         print("ERROR: quit the game before installing a new version")
         sys.exit(1)
 
     if not cached:
-        ReleaseList.update()
+        ReleaseList.update(only_latest_stable=(tag == 'stable'))
     builds = ReleaseList.load()
 
     if tag != 'latest':

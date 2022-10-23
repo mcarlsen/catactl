@@ -255,6 +255,9 @@ class Backup:
                     pool.join()
                     print()
 
+            if in_bytes_sum == 0:
+                errors.append(f'Nothing to back up for {build.tag_name}')
+
             if errors:
                 print(f'ERROR: backup failed {len(errors)} errors: {errors}')
                 backup_target.unlink(missing_ok=True)
@@ -287,7 +290,7 @@ class Backup:
                               "Maybe there was a power outage or you interrupted the process or something?")
                         print("INFO: You can try to manually salvage the situation by "
                               f"moving the 'save' folder out of the way and renaming the '{tmp_dir}' folder to 'save'.")
-                        print("`catactl show directory` should open the location for you.")
+                        print("`catactl explore` should open the location for you.")
                         sys.exit(1)
 
                     # stash existing save
@@ -338,17 +341,25 @@ json_opts = {"indent": 4, "cls": DataclassEncoder}
 
 class ReleaseList:
     @staticmethod
-    def download() -> List[Release]:
-        print('downloading release list')
-        url = f'{env.repo_url}/releases'
-        releases = requests.get(url).json()
-        releases = [Release.parse(r) for r in releases]
+    def download(only_latest_stable: bool = True) -> List[Release]:
+        if only_latest_stable:
+            print('downloading which release is the latest stable version')
+            url = f'{env.repo_url}/releases/latest'
+            latest = requests.get(url).json()
+            release = requests.get(latest['url']).json()
+            releases = [Release.parse(release, pattern='Windows_x64-Tiles')]
+        else:
+            print('downloading release list')
+            url = f'{env.repo_url}/releases'
+            releases = requests.get(url).json()
+            releases = [Release.parse(r) for r in releases]
+
         releases = [r for r in releases if r]
         return releases
 
     @staticmethod
-    def update():
-        releases = ReleaseList.download()
+    def update(only_latest_stable: bool = True):
+        releases = ReleaseList.download(only_latest_stable)
         ReleaseList.dump(releases)
 
     @staticmethod

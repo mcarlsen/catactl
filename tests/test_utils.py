@@ -31,6 +31,7 @@ def test_empty_input_means_zero_chunks_in_output():
 def test_chdir_enters_and_exits_folder(tmpdir):
     cwd = Path(os.getcwd())
     tmp = Path(tmpdir)
+    assert cwd != tmp
     with chdir(tmp):
         assert os.getcwd() == str(tmp)
     assert os.getcwd() == str(cwd)

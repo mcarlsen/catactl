@@ -46,7 +46,7 @@ catactl backup
 ### Restore backups
 
 > ⚠️
-> Always *Quit* the game before restoring a backup
+> *Quit* the game before restoring a backup. `catactl` will refuse to restore a backup while the game is running.
 
 #### Restore your most recent backup
 
