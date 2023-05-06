@@ -53,7 +53,7 @@ class Release:
     timestamp: str
 
     @staticmethod
-    def parse(release, pattern='cdda-windows-tiles-x64'):
+    def parse(release, pattern='cdda-windows-tiles-x64') -> Optional["Release"]:
         """Parses the github release object"""
         assets = [asset for asset in release["assets"] if pattern in asset["name"]]
         try:
@@ -70,21 +70,21 @@ class Release:
             return None
 
     @property
-    def download_target(self):
+    def download_target(self) -> Path:
         """Path to the downloaded release archive"""
         return env.download_folder / self.file_name
 
     @property
-    def install_target(self):
+    def install_target(self) -> Path:
         """Path to the install folder"""
         return env.install_folder / self.tag_name
 
     @property
-    def manifest_target(self):
+    def manifest_target(self) -> Path:
         return self.install_target / 'catactl.manifest'
 
     @property
-    def save_target(self):
+    def save_target(self) -> Path:
         return self.install_target / 'save'
 
     def dump(self, target: Path):
