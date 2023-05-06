@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from . import ReleaseList, Release, switch_install, Backup, get_running_process
 from .config import init_app, current_env as env
+from .modding import mods
 
 
 @click.group()
@@ -18,7 +19,13 @@ def show():
     """
     Shows the current state of affairs.
     """
-    pass
+
+
+@catactl.group()
+def mod():
+    """
+    Illegal modding
+    """
 
 
 @catactl.command()
@@ -184,6 +191,13 @@ def explore():
     Opens the catactl application folder in a window
     """
     subprocess.Popen(['start', str(env.app_root)], shell=True)
+
+
+@mod.command()
+def install():
+    """Install all illegal mods"""
+    for k, m in mods.items():
+        m.install()
 
 
 if __name__ == '__main__':
